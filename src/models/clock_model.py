@@ -15,7 +15,11 @@ that a view can render.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+
+# Fixed timezone for HK/Beijing time (UTC+8), independent of host settings.
+UTC_PLUS_8 = timezone(timedelta(hours=8), name="UTC+08:00")
 
 
 @dataclass(frozen=True)
@@ -59,7 +63,9 @@ class ClockModel:
         the second hand uses microseconds, the minute hand borrows progress from
         seconds, and the hour hand borrows progress from minutes.
         """
-        current_time = now or datetime.now()
+        # Always use a fixed UTC+8 wall clock so the app shows HK/Beijing time
+        # no matter where the program is running.
+        current_time = now or datetime.now(UTC_PLUS_8)
         self._current_time = current_time
 
         # Include fractions so the hands move continuously instead of stepping.
