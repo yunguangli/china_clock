@@ -48,14 +48,6 @@ class ClockModel:
     "What should the clock show right now?"
     """
 
-    def __init__(self) -> None:
-        self._current_time: datetime | None = None
-
-    @property
-    def current_time(self) -> datetime | None:
-        """Expose the latest captured time for debugging or testing."""
-        return self._current_time
-
     def snapshot(self, now: datetime | None = None) -> ClockState:
         """Capture the current time and derive the angles for all hands.
 
@@ -66,7 +58,6 @@ class ClockModel:
         # Always use a fixed UTC+8 wall clock so the app shows HK/Beijing time
         # no matter where the program is running.
         current_time = now or datetime.now(UTC_PLUS_8)
-        self._current_time = current_time
 
         # Include fractions so the hands move continuously instead of stepping.
         second_progress = current_time.second + current_time.microsecond / 1_000_000

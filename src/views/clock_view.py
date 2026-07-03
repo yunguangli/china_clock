@@ -62,6 +62,23 @@ class AnalogClockView:
         self._badge_placeholder = ft.Container()
         self._flag_placeholder = ft.Container()
         self._stack = ft.Stack()
+        self._numeral_controls: list[ft.Text] = []
+        for numeral, x, y, font_size in numeral_specs(self._diameter):
+            numeral_width = font_size * (1.35 if len(numeral) == 1 else 2.2)
+            self._numeral_controls.append(
+                ft.Text(
+                    value=numeral,
+                    left=x - numeral_width / 2,
+                    top=y - font_size * 0.52,
+                    width=numeral_width,
+                    text_align=ft.TextAlign.CENTER,
+                    size=font_size,
+                    color="#FFF4C8",
+                    weight=ft.FontWeight.BOLD,
+                    font_family="Georgia",
+                )
+            )
+
         self._root = ft.Container(
             alignment=ft.Alignment.CENTER,
             content=self._stack,
@@ -78,6 +95,10 @@ class AnalogClockView:
         """Tell the view it can start pushing live updates to Flet."""
         self._is_live = True
 
+    def unmount(self) -> None:
+        """Tell the view to stop pushing live updates."""
+        self._is_live = False
+
     def resize(self, diameter: float) -> None:
         """Resize the whole dial while keeping proportions intact."""
         new_diameter = max(320.0, min(860.0, float(diameter)))
@@ -89,8 +110,6 @@ class AnalogClockView:
 
         if self._last_state is not None:
             self.render(self._last_state)
-        elif self._is_live:
-            self._root.update()
 
     def render(self, state: ClockState) -> None:
         """Render one clock state.
@@ -203,34 +222,22 @@ class AnalogClockView:
         )
         self._flag_placeholder.opacity = 1.0
 
-        numeral_controls: list[ft.Control] = []
-        for numeral, x, y, font_size in numeral_specs(diameter):
+        for i, (numeral, x, y, font_size) in enumerate(numeral_specs(diameter)):
             numeral_width = font_size * (1.35 if len(numeral) == 1 else 2.2)
-            numeral_controls.append(
-                ft.Text(
-                    value=numeral,
-                    left=x - numeral_width / 2,
-                    top=y - font_size * 0.52,
-                    width=numeral_width,
-                    text_align=ft.TextAlign.CENTER,
-                    size=font_size,
-                    color="#FFF4C8",
-                    weight=ft.FontWeight.BOLD,
-                    font_family="Georgia",
-                )
-            )
+            ctrl = self._numeral_controls[i]
+            ctrl.left = x - numeral_width / 2
+            ctrl.top = y - font_size * 0.52
+            ctrl.width = numeral_width
+            ctrl.size = font_size
 
         self._stack.controls = [
             self._face_background,
             self._static_canvas,
             self._badge_placeholder,
-            *numeral_controls,
+            *self._numeral_controls,
             self._flag_placeholder,
             self._hands_canvas,
             self._title_label,
             self._digital_label,
             self._date_label,
         ]
-
-        if self._is_live:
-            self._root.update()

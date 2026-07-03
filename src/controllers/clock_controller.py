@@ -44,6 +44,16 @@ class ClockController:
             return
         self._task = asyncio.create_task(self._run())
 
+    async def stop(self) -> None:
+        """Stop the refresh loop."""
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
     async def _run(self) -> None:
         """Continuously publish fresh model snapshots to the view.
 
@@ -51,6 +61,8 @@ class ClockController:
         remains responsive while the clock keeps moving.
         """
         while True:
-            state = self._model.snapshot()
-            self._view.render(state)
+            page = self._view.control.page
+            if page and getattr(page, "visible", True):
+                state = self._model.snapshot()
+                self._view.render(state)
             await asyncio.sleep(self._refresh_seconds)

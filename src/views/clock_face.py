@@ -161,23 +161,16 @@ def update_hand_shapes(
     minute_line = shapes[1]
     second_line = shapes[2]
 
-    if isinstance(hour_line, cv.Line):
-        hour_line.x1 = center
-        hour_line.y1 = center
-        hour_line.x2 = hour_end[0]
-        hour_line.y2 = hour_end[1]
+    hour_line.x2 = hour_end[0]
+    hour_line.y2 = hour_end[1]
 
-    if isinstance(minute_line, cv.Line):
-        minute_line.x1 = center
-        minute_line.y1 = center
-        minute_line.x2 = minute_end[0]
-        minute_line.y2 = minute_end[1]
+    minute_line.x2 = minute_end[0]
+    minute_line.y2 = minute_end[1]
 
-    if isinstance(second_line, cv.Line):
-        second_line.x1 = second_tail[0]
-        second_line.y1 = second_tail[1]
-        second_line.x2 = second_tip[0]
-        second_line.y2 = second_tip[1]
+    second_line.x1 = second_tail[0]
+    second_line.y1 = second_tail[1]
+    second_line.x2 = second_tip[0]
+    second_line.y2 = second_tip[1]
 
 
 def numeral_specs(diameter: float) -> list[tuple[str, float, float, float]]:

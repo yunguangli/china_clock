@@ -114,38 +114,73 @@ point calculated from angle and length.
 This is simpler than rotating image assets because a line can be redrawn at the
 exact angle needed for every frame.
 
-How the hands move
-------------------
-The controller refreshes the clock about 30 times per second. On each refresh:
+How the hands move - triggers, event flow, and rendering
+--------------------------------------------------------
+The clock hands are animated by an asyncio task running at 60 Hz (16.67 ms per
+frame). Here is the complete event flow for each frame:
 
-1. The model reads the current time.
-2. It converts that time into angles.
-3. The view redraws the hands with the new angles.
+Trigger:
+--------
+The *only* trigger is time - specifically ``asyncio.sleep(1/60)`` in the
+controller's ``_run()`` loop. No user input, no Flet events, no OS timers.
+This is a deliberate design: a clock is a time-driven system, not an
+event-driven one.
 
-The model uses fractional progress so the hands move smoothly instead of
-jumping:
+Event flow (per frame):
+-----------------------
+1. **Controller** (``ClockController._run``):
+   - Wakes up every ~16.67 ms (60 Hz).
+   - Checks ``page.visible`` - if the app is minimized/backgrounded, it skips
+     the frame to save CPU.
+   - Calls ``model.snapshot(now)`` to get a fresh ``ClockState``.
 
-* second angle = ``seconds + microseconds`` converted into 6 degrees per second,
-* minute angle = ``minutes + second_progress / 60`` converted into 6 degrees,
-* hour angle = ``(hour % 12) + minute_progress / 60`` converted into 30 degrees.
+2. **Model** (``ClockModel.snapshot``):
+   - Captures ``datetime.now(UTC_PLUS_8)``.
+   - Computes three angles with sub-second precision:
+     * ``second_angle = (seconds + microseconds/1e6) * 6``   (6 deg/sec)
+     * ``minute_angle = (minutes + second_progress/60) * 6`` (6 deg/min)
+     * ``hour_angle   = ((hour%12) + minute_progress/60) * 30`` (30 deg/hour)
+   - Formats digital time (``%H:%M:%S``) and date (``%A, %d %B %Y``).
+   - Returns immutable ``ClockState`` dataclass.
 
-That is why the second hand sweeps and why the minute and hour hands creep
-forward continuously instead of stepping once per unit.
+3. **Controller → View** (``view.render(state)``):
+   - Passes the ``ClockState`` snapshot to the view. No events, no callbacks,
+     just a plain data object.
 
-Performance notes for learners
-------------------------------
-Flet control updates are convenient, but they are not free. A common beginner
-mistake is calling ``update()`` on a large parent control too often.
+4. **View** (``AnalogClockView.render``):
+   - Updates ``_digital_label.value`` and ``_date_label.value`` *only if text
+     changed* (avoids redundant Flet updates).
+   - Calls ``update_hand_shapes()`` which **mutates** the existing canvas
+     shapes in place:
+     * ``hour_line.x2, y2`` ← new endpoint from ``hour_angle``
+     * ``minute_line.x2, y2`` ← new endpoint from ``minute_angle``
+     * ``second_line.x1,y1,x2,y2`` ← tail + tip from ``second_angle``
+   - Calls ``_hands_canvas.update()`` - **only the hands canvas repaints**.
+   - Conditionally calls ``_digital_label.update()`` / ``_date_label.update()``.
 
-This clock is designed to avoid that pattern:
+Key performance points:
+-----------------------
+* **No layout rebuild** - ``_rebuild_layout()`` runs only on window resize.
+* **No root update** - ``_root.update()`` is never called in the render loop.
+* **Mutable canvas shapes** - ``create_hand_shapes()`` allocates once;
+  ``update_hand_shapes()`` mutates coordinates in place.
+* **Two canvases** - Static face (rings, ticks) on one canvas; moving hands on
+  another. Only the hands canvas repaints at 60 Hz.
+* **Visibility gating** - Controller skips work when page is not visible.
 
-* layout rebuilds happen only when the window size changes,
-* the moving hands repaint on their own canvas,
-* the digital time and date are updated only when their displayed text changes,
-* the whole root container is not repainted every frame.
+Why 60 Hz?
+----------
+At 60 Hz the second hand moves every frame (6° per frame = smooth sweep).
+At 30 Hz it would move 12° per frame - visibly jittery. The cost is ~2x more
+``canvas.update()`` calls, which is negligible on modern hardware.
 
-That strategy keeps the animation smooth while avoiding unnecessary work.
+Why not Flet's ``page.on_timer`` or ``ft.Timer``?
+-------------------------------------------------
+``asyncio`` gives precise, drift-free timing and integrates with Flet's own
+event loop. ``asyncio.sleep`` yields to Flet so the UI stays responsive.
 """
+
+import asyncio
 
 import flet as ft
 
@@ -180,10 +215,7 @@ def main(page: ft.Page) -> None:
 
     model = ClockModel()
     view = AnalogClockView(diameter=700)
-    controller = ClockController(model=model, view=view, refresh_hz=30.0)
-
-    # Render once before mounting so the page never flashes placeholder values.
-    view.render(model.snapshot())
+    controller = ClockController(model=model, view=view, refresh_hz=60.0)
 
     page.add(
         ft.SafeArea(
@@ -200,11 +232,29 @@ def main(page: ft.Page) -> None:
     page.update()
     view.resize(_preferred_diameter(page))
 
-    def on_resized(e: ft.ControlEvent) -> None:
-        view.resize(_preferred_diameter(page))
+    _resize_task: asyncio.Task[None] | None = None
+
+    async def _debounced_resize() -> None:
+        try:
+            await asyncio.sleep(0.1)
+            view.resize(_preferred_diameter(page))
+        except asyncio.CancelledError:
+            pass
+
+    async def on_resized(e: ft.ControlEvent) -> None:
+        nonlocal _resize_task
+        if _resize_task is not None:
+            _resize_task.cancel()
+        _resize_task = asyncio.create_task(_debounced_resize())
 
     page.on_resized = on_resized
     controller.start()
+
+    async def on_close(e) -> None:
+        await controller.stop()
+        view.unmount()
+
+    page.on_close = on_close
 
 
 ft.run(main)
